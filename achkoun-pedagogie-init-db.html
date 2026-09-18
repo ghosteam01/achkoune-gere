@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ACHKOUN Pédagogie - Initialisation Base de Données</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0f1115;
+    color: #e8e8e8;
+    margin: 0;
+    padding: 16px;
+    max-width: 700px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 20px; margin-top: 24px; }
+  h2 { font-size: 16px; margin-top: 28px; border-bottom: 1px solid #333; padding-bottom: 6px; }
+  .card {
+    background: #1a1d24;
+    border: 1px solid #2a2d35;
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  label { display: block; margin-top: 10px; font-size: 13px; color: #aaa; }
+  input, select, textarea {
+    width: 100%;
+    padding: 10px;
+    margin-top: 4px;
+    background: #0f1115;
+    border: 1px solid #333;
+    border-radius: 6px;
+    color: #fff;
+    font-size: 14px;
+  }
+  textarea { min-height: 90px; font-family: monospace; }
+  button {
+    margin-top: 14px;
+    width: 100%;
+    padding: 12px;
+    background: #3b82f6;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  button:active { background: #2563eb; }
+  button.secondary { background: #444; }
+  button.danger { background: #b91c1c; }
+  .status {
+    margin-top: 10px;
+    font-size: 13px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    display: none;
+  }
+  .status.ok { background: #14532d; color: #bbf7d0; display: block; }
+  .status.err { background: #7f1d1d; color: #fecaca; display: block; }
+  .status.info { background: #1e3a5f; color: #bfdbfe; display: block; }
+  .row { display: flex; gap: 8px; }
+  .row > div { flex: 1; }
+  .hint { font-size: 12px; color: #888; margin-top: 4px; }
+  .config-warning {
+    background: #78350f;
+    color: #fed7aa;
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    margin-bottom: 20px;
+  }
+</style>
+</head>
+<body>
+
+<h1>🗂️ ACHKOUN Pédagogie — Init Base de Données</h1>
+
+<!-- ============ 1. CONFIG ============ -->
+<div class="card">
+  <h2>1. achkoun_config</h2>
+  <p class="hint">Document unique de version du contenu (système de cache, comme sur AchkounE).</p>
+  <button id="btnInitConfig">Initialiser achkoun_config (versionPack = 1)</button>
+  <div class="status" id="statusConfig"></div>
+</div>
+
+<!-- ============ 2. SERIES ============ -->
+<div class="card">
+  <h2>2. achkoun_series</h2>
+  <label>Numéro de série (1 à 31)</label>
+  <input type="number" id="serieId" min="1" max="31" placeholder="Ex: 1">
+  <button id="btnAddSerie">Créer la série</button>
+  <div class="status" id="statusSerie"></div>
+  <p class="hint" style="margin-top:14px;">Créer toutes les séries 1 à 31 d'un coup :</p>
+  <button class="secondary" id="btnBulkSeries">Créer les 31 séries vides</button>
+  <div class="status" id="statusBulkSeries"></div>
+</div>
+
+<!-- ============ 3. QUESTIONS (une par une) ============ -->
+<div class="card">
+  <h2>3. achkoun_questions — ajout manuel</h2>
+  <label>Numéro de série</label>
+  <input type="number" id="qSerie" min="1" max="31" placeholder="Ex: 1">
+  <label>Thème</label>
+  <input type="text" id="qTheme" placeholder="Ex: priorites">
+  <label>Énoncé de la question</label>
+  <textarea id="qEnonce" placeholder="Texte de la question"></textarea>
+  <label>Réponse 1</label>
+  <input type="text" id="qR1">
+  <label>Réponse 2</label>
+  <input type="text" id="qR2">
+  <label>Réponse 3</label>
+  <input type="text" id="qR3">
+  <label>Réponse 4</label>
+  <input type="text" id="qR4">
+  <label>Numéro de la bonne réponse (1 à 4)</label>
+  <input type="number" id="qBonne" min="1" max="4">
+  <label>Explication (optionnel, à remplir plus tard)</label>
+  <textarea id="qExplication" placeholder="Laisser vide si pas encore prête"></textarea>
+  <button id="btnAddQuestion">Ajouter cette question</button>
+  <div class="status" id="statusQuestion"></div>
+</div>
+
+<!-- ============ 4. QUESTIONS (import JSON en masse) ============ -->
+<div class="card">
+  <h2>4. achkoun_questions — import en masse (JSON)</h2>
+  <p class="hint">Colle un tableau JSON de questions au format ci-dessous, puis importe. Pratique pour rentrer beaucoup de questions d'un coup.</p>
+  <textarea id="jsonImport" style="min-height:160px;" placeholder='[
+  {
+    "numeroSerie": 1,
+    "theme": "priorites",
+    "enonce": "Texte de la question",
+    "reponses": ["Choix 1", "Choix 2", "Choix 3", "Choix 4"],
+    "bonneReponse": 2,
+    "explication": ""
+  }
+]'></textarea>
+  <button id="btnImportJson">Importer ce JSON</button>
+  <div class="status" id="statusImport"></div>
+</div>
+
+<!-- ============ 5. CANDIDATS ============ -->
+<div class="card">
+  <h2>5. achkoun_candidats — inscription (usage Moniteur)</h2>
+  <label>Nom complet</label>
+  <input type="text" id="cNom" placeholder="Ex: Ahmed Bennani">
+  <label>Identifiant (login)</label>
+  <input type="text" id="cIdentifiant" placeholder="Ex: ahmed01">
+  <label>Mot de passe initial</label>
+  <input type="text" id="cMotDePasse" placeholder="Mot de passe">
+  <label>PIN maître (secours)</label>
+  <input type="text" id="cPin" placeholder="Ex: 1234">
+  <label>Catégorie de permis</label>
+  <input type="text" id="cCategorie" placeholder="Ex: B">
+  <button id="btnAddCandidat">Inscrire le candidat</button>
+  <div class="status" id="statusCandidat"></div>
+  <p class="hint">⚠️ Ici les mots de passe/PIN sont stockés tels quels pour la mise en place initiale. Avant la mise en production réelle, il faudra les hasher (par ex. via une Cloud Function) plutôt que de les stocker en clair.</p>
+</div>
+
+<!-- ============ 6. VERIFICATION ============ -->
+<div class="card">
+  <h2>6. Vérifier ce qui existe déjà</h2>
+  <button class="secondary" id="btnCheck">Compter les documents par collection</button>
+  <div class="status" id="statusCheck"></div>
+</div>
+
+<script>
+// ============================================================
+// COLLE TA CONFIGURATION FIREBASE ICI (celle déjà utilisée pour AchkounE)
+// ============================================================
+const firebaseConfig = {
+  apiKey: "AIzaSyA3lz0NW4ToKVtmLx27P3Y3iDKmFYpxNlg",
+  authDomain: "achkoune-pedagogie.firebaseapp.com",
+  projectId: "achkoune-pedagogie",
+  storageBucket: "achkoune-pedagogie.firebasestorage.app",
+  messagingSenderId: "261834863377",
+  appId: "1:261834863377:web:1237a80414860bb54f12b0"
+};
+
+let db = null;
+try {
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.firestore();
+} catch (e) {
+  console.error("Firebase non initialisé :", e);
+}
+
+function showStatus(id, type, message) {
+  const el = document.getElementById(id);
+  el.className = "status " + type;
+  el.textContent = message;
+}
+
+function checkDb() {
+  if (!db) {
+    alert("Configure d'abord firebaseConfig en bas du fichier, puis recharge la page.");
+    return false;
+  }
+  return true;
+}
+
+// ---- 1. achkoun_config ----
+document.getElementById("btnInitConfig").addEventListener("click", async () => {
+  if (!checkDb()) return;
+  try {
+    await db.collection("achkoun_config").doc("main").set({
+      versionPack: 1,
+      dateMaj: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    showStatus("statusConfig", "ok", "✅ achkoun_config créé (versionPack = 1).");
+  } catch (e) {
+    showStatus("statusConfig", "err", "Erreur : " + e.message);
+  }
+});
+
+// ---- 2. achkoun_series (une seule) ----
+document.getElementById("btnAddSerie").addEventListener("click", async () => {
+  if (!checkDb()) return;
+  const id = document.getElementById("serieId").value;
+  if (!id) { showStatus("statusSerie", "err", "Indique un numéro de série."); return; }
+  try {
+    await db.collection("achkoun_series").doc(String(id)).set({
+      id: Number(id),
+      questions: []
+    }, { merge: true });
+    showStatus("statusSerie", "ok", "✅ Série " + id + " créée.");
+  } catch (e) {
+    showStatus("statusSerie", "err", "Erreur : " + e.message);
+  }
+});
+
+// ---- 2b. Créer les 31 séries d'un coup ----
+document.getElementById("btnBulkSeries").addEventListener("click", async () => {
+  if (!checkDb()) return;
+  try {
+    const batch = db.batch();
+    for (let i = 1; i <= 31; i++) {
+      const ref = db.collection("achkoun_series").doc(String(i));
+      batch.set(ref, { id: i, questions: [] }, { merge: true });
+    }
+    await batch.commit();
+    showStatus("statusBulkSeries", "ok", "✅ Les 31 séries ont été créées.");
+  } catch (e) {
+    showStatus("statusBulkSeries", "err", "Erreur : " + e.message);
+  }
+});
+
+// ---- 3. achkoun_questions (ajout manuel) ----
+document.getElementById("btnAddQuestion").addEventListener("click", async () => {
+  if (!checkDb()) return;
+  const numeroSerie = Number(document.getElementById("qSerie").value);
+  const theme = document.getElementById("qTheme").value.trim();
+  const enonce = document.getElementById("qEnonce").value.trim();
+  const r1 = document.getElementById("qR1").value.trim();
+  const r2 = document.getElementById("qR2").value.trim();
+  const r3 = document.getElementById("qR3").value.trim();
+  const r4 = document.getElementById("qR4").value.trim();
+  const bonneReponse = Number(document.getElementById("qBonne").value);
+  const explication = document.getElementById("qExplication").value.trim();
+
+  if (!numeroSerie || !theme || !enonce || !r1 || !r2 || !r3 || !r4 || !bonneReponse) {
+    showStatus("statusQuestion", "err", "Remplis tous les champs obligatoires.");
+    return;
+  }
+
+  try {
+    const themePrefix = theme.substring(0, 3).toUpperCase();
+    const ref = await db.collection("achkoun_questions").add({
+      numeroSerie,
+      theme,
+      enonce,
+      reponses: [r1, r2, r3, r4],
+      bonneReponse,
+      explication: explication || "",
+      idInterne: "ACH-" + themePrefix + "-" + Date.now().toString().slice(-6)
+    });
+    // On lie la question à sa série
+    await db.collection("achkoun_series").doc(String(numeroSerie)).set({
+      id: numeroSerie,
+      questions: firebase.firestore.FieldValue.arrayUnion(ref.id)
+    }, { merge: true });
+
+    showStatus("statusQuestion", "ok", "✅ Question ajoutée et liée à la série " + numeroSerie + ".");
+    document.getElementById("qEnonce").value = "";
+    document.getElementById("qR1").value = "";
+    document.getElementById("qR2").value = "";
+    document.getElementById("qR3").value = "";
+    document.getElementById("qR4").value = "";
+    document.getElementById("qBonne").value = "";
+    document.getElementById("qExplication").value = "";
+  } catch (e) {
+    showStatus("statusQuestion", "err", "Erreur : " + e.message);
+  }
+});
+
+// ---- 4. Import JSON en masse ----
+document.getElementById("btnImportJson").addEventListener("click", async () => {
+  if (!checkDb()) return;
+  const raw = document.getElementById("jsonImport").value.trim();
+  if (!raw) { showStatus("statusImport", "err", "Colle d'abord un JSON."); return; }
+
+  let questions;
+  try {
+    questions = JSON.parse(raw);
+    if (!Array.isArray(questions)) throw new Error("Le JSON doit être un tableau [ ... ]");
+  } catch (e) {
+    showStatus("statusImport", "err", "JSON invalide : " + e.message);
+    return;
+  }
+
+  showStatus("statusImport", "info", "Import en cours de " + questions.length + " question(s)...");
+
+  try {
+    let count = 0;
+    const seriesTouched = {};
+    for (const q of questions) {
+      const themePrefix = (q.theme || "GEN").substring(0, 3).toUpperCase();
+      const ref = await db.collection("achkoun_questions").add({
+        numeroSerie: q.numeroSerie,
+        theme: q.theme,
+        enonce: q.enonce,
+        reponses: q.reponses,
+        bonneReponse: q.bonneReponse,
+        explication: q.explication || "",
+        idInterne: "ACH-" + themePrefix + "-" + Date.now().toString().slice(-6) + count
+      });
+      if (!seriesTouched[q.numeroSerie]) seriesTouched[q.numeroSerie] = [];
+      seriesTouched[q.numeroSerie].push(ref.id);
+      count++;
+    }
+    // Lier toutes les questions importées à leurs séries respectives
+    for (const serieId in seriesTouched) {
+      await db.collection("achkoun_series").doc(String(serieId)).set({
+        id: Number(serieId),
+        questions: firebase.firestore.FieldValue.arrayUnion(...seriesTouched[serieId])
+      }, { merge: true });
+    }
+    showStatus("statusImport", "ok", "✅ " + count + " question(s) importée(s) et liée(s) à leurs séries.");
+  } catch (e) {
+    showStatus("statusImport", "err", "Erreur pendant l'import : " + e.message);
+  }
+});
+
+// ---- 5. achkoun_candidats ----
+document.getElementById("btnAddCandidat").addEventListener("click", async () => {
+  if (!checkDb()) return;
+  const nom = document.getElementById("cNom").value.trim();
+  const identifiant = document.getElementById("cIdentifiant").value.trim();
+  const motDePasse = document.getElementById("cMotDePasse").value.trim();
+  const pin = document.getElementById("cPin").value.trim();
+  const categorie = document.getElementById("cCategorie").value.trim();
+
+  if (!nom || !identifiant || !motDePasse) {
+    showStatus("statusCandidat", "err", "Nom, identifiant et mot de passe sont obligatoires.");
+    return;
+  }
+
+  try {
+    await db.collection("achkoun_candidats").add({
+      nom,
+      identifiant,
+      motDePasseHash: motDePasse,
+      pinMaitreHash: pin || "",
+      categoriePermis: categorie || "",
+      statut: "en_cours",
+      dateInscription: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    showStatus("statusCandidat", "ok", "✅ Candidat \"" + nom + "\" inscrit.");
+    document.getElementById("cNom").value = "";
+    document.getElementById("cIdentifiant").value = "";
+    document.getElementById("cMotDePasse").value = "";
+    document.getElementById("cPin").value = "";
+    document.getElementById("cCategorie").value = "";
+  } catch (e) {
+    showStatus("statusCandidat", "err", "Erreur : " + e.message);
+  }
+});
+
+// ---- 6. Vérification ----
+document.getElementById("btnCheck").addEventListener("click", async () => {
+  if (!checkDb()) return;
+  showStatus("statusCheck", "info", "Comptage en cours...");
+  try {
+    const collections = ["achkoun_config", "achkoun_series", "achkoun_questions", "achkoun_candidats", "achkoun_resultats"];
+    let lines = [];
+    for (const c of collections) {
+      const snap = await db.collection(c).get();
+      lines.push(c + " : " + snap.size + " document(s)");
+    }
+    showStatus("statusCheck", "ok", lines.join(" | "));
+  } catch (e) {
+    showStatus("statusCheck", "err", "Erreur : " + e.message);
+  }
+});
+</script>
+
+</body>
+</html>
