@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Série candidat — ACHKOUN</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+:root{--bg:#0f172a;--card:#1e293b;--tx:#f1f5f9;--mut:#94a3b8;--ac:#3b82f6;--ok:#22c55e;--ko:#ef4444;--warn:#f59e0b}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0 auto;background:var(--bg);color:var(--tx);font-family:-apple-system,system-ui,sans-serif;padding:env(safe-area-inset-top) 14px env(safe-area-inset-bottom);max-width:560px;overscroll-behavior:none}
+h1{font-size:20px;margin:16px 0 4px}h2{font-size:17px;margin:12px 0}
+.card{background:var(--card);border-radius:14px;padding:14px;margin:10px 0}
+input{width:100%;padding:12px;border-radius:10px;border:1px solid #334155;background:#0f172a;color:var(--tx);font-size:16px;margin:6px 0;font-family:inherit}
+button{font:inherit;border:0;border-radius:12px;padding:12px 14px;background:#334155;color:var(--tx);cursor:pointer;touch-action:manipulation}
+button:disabled{opacity:.4}
+button.p{background:var(--ac)}button.g{background:var(--ok);color:#052e16;font-weight:700}button.r{background:var(--ko)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.row>*{flex:1}
+.mut{color:var(--mut);font-size:13px}
+.grid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin:10px 0}
+.grid button{padding:12px 0;font-size:15px;border-radius:8px}
+.bar{height:8px;background:#334155;border-radius:4px;overflow:hidden}.bar i{display:block;height:100%;background:var(--ac)}
+.score{font-size:56px;font-weight:800;text-align:center}
+.item{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid #334155;font-size:15px}
+.ok{color:var(--ok)}.ko{color:var(--ko)}
+.cwrap{display:flex;flex-direction:column;gap:10px;height:calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom));padding:8px 0 10px;user-select:none;-webkit-user-select:none}
+.ct{font-size:68px;font-weight:800;text-align:center;line-height:1;flex:none}.ct.wr{color:var(--warn)}
+.cshow{flex:none;text-align:center;font-size:32px;font-weight:800;letter-spacing:6px;min-height:42px}
+.cpad{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:12px;min-height:0}
+.cpad button{font-size:68px;font-weight:800;border-radius:18px;padding:0}
+.cpad button.on{background:var(--ac)}
+.cbtm{flex:none;display:flex;gap:12px}.cbtm button{flex:1;padding:22px 0;font-size:22px;font-weight:700}.cbtm .g{flex:2}
+@keyframes pl{50%{transform:scale(1.04)}}.pulse{animation:pl 1s infinite}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+/* ===== CONFIG ===== */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyA3lz0NW4ToKVtmLx27P3Y3iDKmFYpxNlg",
+  authDomain: "achkoune-pedagogie.firebaseapp.com",
+  projectId: "achkoune-pedagogie",
+  storageBucket: "achkoune-pedagogie.firebasestorage.app",
+  messagingSenderId: "261834863377",
+  appId: "1:261834863377:web:1237a80414860bb54f12b0"
+};
+const COL='achkoun_series', PCOL='achkoun_passages', SMAX=31;
+
+/* ===== ÉTAT ===== */
+let L={cache:{},themes:[],pending:[],name:'',lastSync:0,ready:false,dl:''};
+try{const d=JSON.parse(localStorage.getItem('achkoun_candidat')||'null');if(d)L=Object.assign(L,d)}catch(e){}
+const save=()=>{try{localStorage.setItem('achkoun_candidat',JSON.stringify(L))}catch(e){}};
+const $=s=>document.querySelector(s);
+const norm=s=>[...new Set(String(s).replace(/[^1-4]/g,'').split(''))].sort().join('');
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const themeName=id=>(L.themes.find(x=>x.id===id)||{}).nom||'';
+let mode='home',selS=0,optDur=30,optAft='end',msg='',busy=false;
+let timeUp=false,T=null,cur='',idx=0,answers=[],cLock=false,cEnd=0,cDur=30,cTimer=null,gTimer=null,gcount=3,wl=null,result=null,sent=null;
+
+/* ===== FIREBASE ===== */
+let db=null;
+function initFB(){
+  try{if(typeof firebase==='undefined')return;if(!firebase.apps.length)firebase.initializeApp(FIREBASE_CONFIG);db=firebase.firestore()}catch(e){db=null}
+}
+function fixS(s){
+  if(!s||typeof s!=='object')return null;
+  const rep=Array.isArray(s.rep)?s.rep.map(x=>norm(x)):[];
+  let nb=parseInt(s.nb);if(!(nb>=1&&nb<=40))nb=(rep.length>=1&&rep.length<=40)?rep.length:40;
+  while(rep.length<nb)rep.push('');rep.length=nb;
+  const th=Array.isArray(s.th)?s.th.map(x=>x?String(x):''):[];
+  while(th.length<nb)th.push('');th.length=nb;
+  return{nb,rep,th};
+}
+async function flush(){
+  if(!db)return;
+  for(const p of [...L.pending]){
+    try{await db.collection(PCOL).add(Object.assign({},p,{createdAt:firebase.firestore.FieldValue.serverTimestamp()}));L.pending=L.pending.filter(x=>x!==p);save()}
+    catch(e){break}
+  }
+}
+
+/* ===== RENDU ===== */
+function render(){
+  const a=$('#app');
+  try{a.innerHTML=({home:homeView,go:goView,cand:candView,res:resView}[mode])()}
+  catch(e){a.innerHTML=`<div class="card"><b class="ko">⚠ Erreur</b><div class="mut" style="margin:8px 0">${esc(e.message)}</div><button onclick="mode='home';render()">Accueil</button></div>`}
+}
+async function wake(){try{if('wakeLock' in navigator)wl=await navigator.wakeLock.request('screen')}catch(e){}}
+function unwake(){try{if(wl)wl.release()}catch(e){}wl=null}
+
+/* ----- TÉLÉCHARGEMENT (une seule fois, puis cache sur le téléphone) ----- */
+async function download(){
+  if(!db){msg='Pas de connexion : connecte-toi à internet pour télécharger les séries.';render();return false}
+  busy=true;msg='Téléchargement en cours…';render();
+  try{
+    let q=db.collection(COL);
+    if(L.ready&&L.lastSync)q=q.where('updatedAt','>',firebase.firestore.Timestamp.fromMillis(L.lastSync));
+    const snap=await q.get();let c=0;
+    snap.forEach(d=>{
+      const v=d.data(),ts=v.updatedAt?v.updatedAt.toMillis():0;
+      const s=fixS({nb:v.nbQuestions,rep:v.reponses,th:v.themes});
+      if(s){L.cache[d.id]=s;c++}
+      L.lastSync=Math.max(L.lastSync||0,ts);
+    });
+    const td=await db.collection('achkoun_config').doc('themes').get();
+    if(td.exists)L.themes=td.data().liste||[];
+    L.ready=true;L.dl=new Date().toLocaleDateString('fr-FR');save();
+    msg='✔ '+c+' série(s) téléchargée(s)';busy=false;render();return true;
+  }catch(e){busy=false;msg='⚠ Téléchargement impossible : '+e.message;render();return false}
+}
+const availN=()=>Object.values(L.cache).filter(s=>s.rep.every(Boolean)).length;
+
+/* ----- ACCUEIL ----- */
+function homeView(){
+  if(!L.ready)return `<h1>📝 Série d'entraînement</h1><div class="card"><b>Première ouverture</b>
+  <div class="mut" style="margin:8px 0">Les séries doivent être téléchargées une seule fois. Ensuite l'application fonctionne sans connexion.</div>
+  <button class="g" style="width:100%;padding:16px" onclick="download()" ${busy?'disabled':''}>${busy?'Téléchargement…':'📥 Télécharger les séries'}</button>
+  <div class="mut" style="margin-top:8px">${esc(msg)}</div></div>`;
+  const o=(k,v,l)=>`<button class="${(k==='dur'?optDur:optAft)===v?'p':''}" onclick="${k==='dur'?'optDur':'optAft'}=${typeof v==='number'?v:`'${v}'`};render()">${l}</button>`;
+  const max=Math.max(SMAX,...Object.keys(L.cache).map(Number));
+  let g='';
+  for(let i=1;i<=max;i++){const s=L.cache[i];const ok=s&&s.rep.every(Boolean);g+=`<button class="${selS===i?'p':''}" ${ok?'':'disabled'} onclick="selS=${i};render()">${i}</button>`}
+  return `<h1>📝 Série d'entraînement</h1>
+  <div class="card"><div class="mut">Ton nom</div>
+  <input placeholder="Nom et prénom" value="${esc(L.name)}" oninput="L.name=this.value;save()">
+  <div class="mut" style="margin-top:8px">Choisis ta série</div><div class="grid">${g}</div>
+  <div class="mut">Temps par question</div><div class="row">${o('dur',15,'15 s')}${o('dur',30,'30 s')}</div>
+  <div class="mut" style="margin-top:10px">Bouton Valider actif</div><div class="row">${o('aft','end','Après le temps')}${o('aft','free',"Dès que j'ai répondu")}</div>
+  <button class="g" style="width:100%;margin-top:14px;padding:16px" onclick="begin()">Commencer</button>
+  <div class="mut" style="margin-top:8px">${esc(msg)}</div></div>
+  <div class="card row" style="flex-wrap:nowrap;margin-bottom:30px"><div class="mut" style="flex:4">${db?'🟢':'🔴'} ${availN()} série(s) sur le téléphone · mises à jour le ${esc(L.dl)}${L.pending.length?' · '+L.pending.length+' résultat(s) à envoyer':''}</div>
+  <button onclick="download()" ${busy||!db?'disabled':''} style="flex:0" title="Mettre à jour">🔄</button></div>`;
+}
+function begin(){
+  if(!L.name.trim()){msg='Écris ton nom avant de commencer.';render();return}
+  if(!selS){msg='Choisis une série.';render();return}
+  const s=L.cache[selS];
+  if(!s||!s.rep.every(Boolean)){msg='Cette série n\'est pas disponible.';render();return}
+  T=s;msg='';gcount=3;mode='go';render();wake();
+  clearInterval(gTimer);
+  gTimer=setInterval(()=>{gcount--;if(gcount<=0){clearInterval(gTimer);startCand()}else render()},1000);
+}
+function goView(){
+  return `<div class="cwrap" style="justify-content:center"><div class="mut" style="text-align:center;font-size:18px">Série ${selS} — prépare-toi</div><div class="ct" style="font-size:140px">${gcount}</div></div>`;
+}
+
+/* ----- QUESTIONS ----- */
+function startCand(){
+  cDur=optDur;answers=Array(T.nb).fill('');idx=0;cur='';cLock=false;timeUp=false;
+  cEnd=Date.now()+cDur*1000;mode='cand';render();
+  clearInterval(cTimer);cTimer=setInterval(cTick,100);
+}
+const canValid=()=>optAft==='free'?(!!cur||timeUp):timeUp;
+function candView(){
+  const n=T.nb,left=Math.max(0,cEnd-Date.now()),s=Math.ceil(left/1000);
+  return `<div class="cwrap">
+  <div class="row" style="flex:none;flex-wrap:nowrap"><b style="flex:3">${esc(L.name||'Candidat')}</b><span class="mut" style="flex:3;text-align:center">Question ${idx+1} / ${n}</span><button onclick="cQuit()" style="flex:0;padding:6px 12px">✕</button></div>
+  <div class="ct ${s<=5?'ko':s<=10?'wr':''}" id="ct">${s}</div>
+  <div class="bar" style="flex:none"><i id="cb" style="width:${left/(cDur*1000)*100}%"></i></div>
+  <div class="mut" style="flex:none;text-align:center;min-height:18px;${timeUp?'color:var(--warn);font-weight:700':''}">${timeUp?'⏱ Temps écoulé — appuie sur Valider':optAft==='end'?'Valider sera actif à la fin du temps':''}</div>
+  <div class="cshow">${cur||'—'}</div>
+  <div class="cpad">${[1,2,3,4].map(k=>`<button class="${cur.includes(k)?'on':''}" ${timeUp?'disabled':''} onclick="cTog(${k})">${k}</button>`).join('')}</div>
+  <div class="cbtm"><button class="r" onclick="cClear()" ${timeUp?'disabled':''}>Effacer</button><button class="g ${timeUp?'pulse':''}" onclick="cValid()" ${canValid()?'':'disabled'}>Valider</button></div></div>`;
+}
+function cTick(){
+  if(mode!=='cand')return;
+  const left=Math.max(0,cEnd-Date.now()),s=Math.ceil(left/1000);
+  const e=$('#ct');if(e){e.textContent=s;e.className='ct '+(s<=5?'ko':s<=10?'wr':'')}
+  const b=$('#cb');if(b)b.style.width=(left/(cDur*1000)*100)+'%';
+  if(left<=0&&!timeUp){timeUp=true;render()}
+}
+function cTog(n){if(timeUp)return;n=String(n);cur=cur.includes(n)?cur.replace(n,''):norm(cur+n);render()}
+function cClear(){if(timeUp)return;cur='';render()}
+function cValid(){
+  if(!canValid())return;
+  answers[idx]=cur;cNext();
+}
+function cNext(){
+  if(mode!=='cand')return;
+  cur='';timeUp=false;
+  if(idx<T.nb-1){idx++;cEnd=Date.now()+cDur*1000;render()}
+  else finishRun();
+}
+function cQuit(){
+  if(!confirm('Quitter ? Le test en cours sera perdu.'))return;
+  clearInterval(cTimer);clearInterval(gTimer);unwake();mode='home';render();
+}
+document.addEventListener('keydown',e=>{
+  if(mode!=='cand')return;
+  if(['1','2','3','4'].includes(e.key))cTog(e.key);
+  else if(e.key==='Backspace')cClear();
+  else if(e.key==='Enter')cValid();
+});
+
+/* ----- RÉSULTAT ----- */
+function finishRun(){
+  clearInterval(cTimer);unwake();
+  const det=answers.map((a,i)=>({q:i+1,a,c:T.rep[i],t:themeName(T.th[i]),ok:!!a&&norm(a)===norm(T.rep[i])}));
+  const score=det.filter(x=>x.ok).length;
+  const th={};
+  det.forEach(x=>{const k=x.t||'Sans thème';th[k]=th[k]||{theme:k,ok:0,n:0};th[k].n++;if(x.ok)th[k].ok++});
+  result={serie:selS,score,n:T.nb,det,th:Object.values(th)};
+  const p={numeroSerie:+selS,candidat:L.name.trim(),score,nbQuestions:T.nb,dureeParQuestion:cDur,reponses:answers,parTheme:result.th,passeLe:new Date().toISOString()};
+  sent=null;mode='res';render();
+  L.pending.push(p);save();
+  flush().then(()=>{sent=L.pending.length===0;if(mode==='res')render()});
+}
+function resView(){
+  const r=result,bad=r.det.filter(x=>!x.ok);
+  const th=[...r.th].sort((a,b)=>(a.ok/a.n)-(b.ok/b.n));
+  const showTh=th.length>1||(th[0]&&th[0].theme!=='Sans thème');
+  return `<h1>Série ${r.serie} — ${esc(L.name)}</h1>
+  <div class="score ${bad.length<=r.n*0.2?'ok':'ko'}">${r.score} / ${r.n}</div>
+  <div class="mut" style="text-align:center">${r.n-r.score} faute(s) · ${sent===null?'⏳ Envoi du résultat…':sent?'✔ Résultat enregistré':'⚠ Résultat gardé sur l\'appareil, envoi plus tard'}</div>
+  ${showTh?`<div class="card"><h2>Par thème <span class="mut">(les plus faibles d'abord)</span></h2>${th.map(k=>`<div class="item"><span>${esc(k.theme)}</span><b class="${k.ok===k.n?'ok':k.ok/k.n<0.6?'ko':''}">${k.ok} / ${k.n}</b></div>`).join('')}</div>`:''}
+  ${bad.length?`<div class="card"><h2>Questions fausses</h2>${bad.map(b=>`<div class="item"><span>Q${b.q}${b.t?`<br><span class="mut">${esc(b.t)}</span>`:''}</span><span class="ko">Ta réponse : ${b.a||'aucune'}</span><span class="ok">Bonne : ${b.c}</span></div>`).join('')}</div>`:'<div class="card ok" style="text-align:center">Sans faute 🎉</div>'}
+  <button class="p" style="width:100%;margin-bottom:30px" onclick="mode='home';render()">Nouvelle série</button>`;
+}
+
+initFB();render();flush();if(!L.ready)download();
+</script>
+</body>
+</html>
